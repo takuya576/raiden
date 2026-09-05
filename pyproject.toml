@@ -52,11 +52,14 @@ docs = [
 [project.scripts]
 rd = "raiden.cli:main"
 
+[tool.uv]
+override-dependencies = ["ruckig==0.19.4"]
+
 [tool.uv.sources]
 i2rt = { path = "third_party/i2rt" }
 pyzed = { path = "packages/pyzed-5.2-cp311-cp311-linux_x86_64.whl" }
 pyroki = { git = "https://github.com/chungmin99/pyroki.git" }
-chiral = { git = "ssh://git@github.com/TRI-ML/chiral" }
+chiral = { git = "https://github.com/TRI-ML/chiral" }
 
 [tool.ruff]
 exclude = ["third_party/"]
