@@ -31,10 +31,13 @@ convention used by the converter).
 
 Image orientation
 -----------------
-Cameras in ``_FLIP_CAMERAS`` (e.g. ``right_wrist_camera``) are physically
-mounted upside-down.  The capture loop rotates their images by 180° to match
-the right-side-up orientation used by the training dataset.  The principal
-point in the intrinsics and the ``T_cam→ee`` rotation are corrected accordingly.
+Cameras in ``_FLIP_CAMERAS`` are physically mounted upside-down.  The capture
+loop rotates their images by 180° to match the right-side-up orientation used by
+the training dataset.  The principal point in the intrinsics and the
+``T_cam→ee`` rotation are corrected accordingly.  This set must stay in sync
+with ``_FLIP_CAMERAS`` in :mod:`raiden.converter`, which applies the same
+correction when building the training data — a mismatch feeds the policy images
+rotated 180° from what it was trained on.  No camera currently needs it.
 """
 
 import asyncio
@@ -60,7 +63,8 @@ from raiden.robot.controller import RobotController
 
 # Cameras mounted upside-down: images are rotated 180° and extrinsics/
 # intrinsics are corrected to match the right-side-up frame.
-_FLIP_CAMERAS = {"right_wrist_camera"}
+# Keep in sync with `_FLIP_CAMERAS` in raiden/converter.py.
+_FLIP_CAMERAS: set[str] = set()
 
 # Maps wrist camera name → which follower arm drives its extrinsics.
 _WRIST_CAMERA_ARM: dict[str, str] = {
