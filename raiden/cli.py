@@ -342,6 +342,38 @@ class ShardifyCommand:
 
 
 @dataclass
+class ExportLerobotCommand:
+    """Export converted episodes to a LeRobot v2.1 dataset"""
+
+    data_dir: str = "data"
+    """Root data directory (default: ./data); reads from <data_dir>/processed/"""
+
+    output_dir: str = "data/lerobot/yam_bimanual"
+    """Output dataset directory (default: data/lerobot/yam_bimanual)"""
+
+    stride: int = 1
+    """Keep every N-th frame; 1 = 30 Hz from 30 Hz recordings (default: 1)"""
+
+    fps: int = 30
+    """Frame rate written to the mp4s and meta/info.json; should equal 30/stride (default: 30)"""
+
+    crf: int = 23
+    """x264 constant rate factor; lower is higher quality (default: 23)"""
+
+    image_stats_samples: int = 100
+    """Frames sampled per episode when computing image statistics (default: 100)"""
+
+    robot_type: str = "yam_bimanual"
+    """robot_type string recorded in meta/info.json (default: yam_bimanual)"""
+
+    verify: bool = True
+    """Check parquet rows == episode length == mp4 frame count (default: True)"""
+
+    overwrite: bool = False
+    """Replace output_dir if it already exists (default: False)"""
+
+
+@dataclass
 class ServeCommand:
     """Start the chiral policy server"""
 
@@ -413,6 +445,9 @@ def _print_help() -> None:
     )
     print(
         "  shardify                    Export converted episodes to WebDataset shards"
+    )
+    print(
+        "  export_lerobot              Export converted episodes to a LeRobot v2.1 dataset"
     )
     print("  console                     Open the interactive metadata console (TUI)")
     print("  reset_can                   Reset CAN interfaces (bring down then up)")
@@ -648,6 +683,37 @@ def main():
                     s3_bucket=command.s3_bucket,
                     s3_prefix=s3_full_prefix,
                 )
+
+        elif subcommand == "export_lerobot":
+            sys.argv.pop(1)
+            command = tyro.cli(
+                ExportLerobotCommand,
+                description="Export converted episodes to a LeRobot v2.1 dataset",
+            )
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            from raiden.lerobot_export import (  # noqa: PLC0415
+                LeRobotExportConfig,
+                run_lerobot_export,
+            )
+
+            selected_tasks = select_processed_task(command.data_dir)
+            for task_dir, episode_dirs in selected_tasks:
+                print(f"Found {len(episode_dirs)} episodes in {task_dir}")
+
+            run_lerobot_export(
+                selected_tasks,
+                LeRobotExportConfig(
+                    output_dir=_Path(command.output_dir),
+                    stride=command.stride,
+                    fps=command.fps,
+                    crf=command.crf,
+                    image_stats_samples=command.image_stats_samples,
+                    robot_type=command.robot_type,
+                    verify=command.verify,
+                    overwrite=command.overwrite,
+                ),
+            )
 
         elif subcommand == "console":
             sys.argv.pop(1)

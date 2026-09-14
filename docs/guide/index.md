@@ -23,6 +23,7 @@
 | `rd record` | Record teleoperation demonstrations |
 | `rd convert` | Convert raw recordings to a structured dataset |
 | `rd shardify` | Export converted episodes to WebDataset shards |
+| `rd export_lerobot` | Export converted episodes to a LeRobot v2.1 dataset |
 | `rd serve` | Start the chiral policy server for live inference |
 | `rd replay` | Replay recorded follower arm motion |
 | `rd visualize` | Visualize a converted recording with Rerun |

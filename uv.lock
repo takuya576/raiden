@@ -2,6 +2,9 @@ version = 1
 revision = 3
 requires-python = "==3.11.*"
 
+[manifest]
+overrides = [{ name = "ruckig", specifier = "==0.19.4" }]
+
 [[package]]
 name = "absl-py"
 version = "2.4.0"
@@ -178,7 +181,7 @@ wheels = [
 [[package]]
 name = "chiral"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/TRI-ML/chiral#f7293d7ddf2209da8d49922dddb2f1f1bc9b4454" }
+source = { git = "https://github.com/TRI-ML/chiral#f7293d7ddf2209da8d49922dddb2f1f1bc9b4454" }
 dependencies = [
     { name = "eclipse-zenoh" },
     { name = "msgpack" },
@@ -601,7 +604,7 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "python-can", specifier = "==4.5.0" },
     { name = "qpsolvers", extras = ["quadprog"], specifier = "==4.7.1" },
-    { name = "ruckig", specifier = "==0.15.3" },
+    { name = "ruckig", specifier = "==0.19.4" },
     { name = "threadpoolctl", specifier = "==3.6.0" },
     { name = "tyro", specifier = "==0.9.26" },
     { name = "viser", specifier = ">=0.2.0" },
@@ -1990,7 +1993,7 @@ zed = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.42.66" },
-    { name = "chiral", git = "ssh://git@github.com/TRI-ML/chiral" },
+    { name = "chiral", git = "https://github.com/TRI-ML/chiral" },
     { name = "i2rt", directory = "third_party/i2rt" },
     { name = "iterfzf", specifier = ">=1.4.0" },
     { name = "jax" },
@@ -2162,9 +2165,16 @@ wheels = [
 
 [[package]]
 name = "ruckig"
-version = "0.15.3"
+version = "0.19.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bc/b7/d3d7c7f507ce8b6a7558418468e796d462dd2053ff3c555727c3f384941e/ruckig-0.15.3.tar.gz", hash = "sha256:48f68535080a594e45275201896c3a71123ac4a64c668eb3cf10b8bc42f34183", size = 870129, upload-time = "2025-05-16T14:04:55.521Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4a/2a/d1c1639bf76699ab1c3c1281101372f2b749d0ad8aee4c19200947b92785/ruckig-0.19.4.tar.gz", hash = "sha256:71d003bf0ff9aa0031d4520b0290a5ffa6458149f5afce8be3ed6d6fba49ea64", size = 886607, upload-time = "2026-07-15T06:59:43.034Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/00/815fe81a7df845522e72d8e2c7f3f8178f737735bf92473a9da235e0e3ed/ruckig-0.19.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:ac6133b08be5717d58fcb997d4ff3f0fa7e5427b2ae152c43e6a896a7694c0b0", size = 689081, upload-time = "2026-07-15T06:58:55.022Z" },
+    { url = "https://files.pythonhosted.org/packages/52/60/a8b7ebc2ee187a05d878a6c48b63a9a1bce5b9c1393ced89eeb959d9492c/ruckig-0.19.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0ce3d7f701ba26eed841561ba2ed1a1804087afc1e996e83b5cd85bf6632e6c4", size = 1062888, upload-time = "2026-07-15T06:58:56.751Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/ef/4684a822e0ab0ac592615266f62fcf2f208b271d6a2735326db580936f42/ruckig-0.19.4-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:cdf8c0a1643a840a2aa4245edf38b35eac19985550fda8771862f9f1c4b12e77", size = 1561172, upload-time = "2026-07-15T06:58:58.296Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/74/26b471a0f3b3240f752e49a144b7d6a2b3e50d9a689e176598b3f8d89699/ruckig-0.19.4-cp311-cp311-win32.whl", hash = "sha256:d90f6c838291212acc9483f8115660c9a93595d4d4f6b3acd79f69e9da865874", size = 1306705, upload-time = "2026-07-15T06:59:00.453Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/ae/fbec06c9631d271ffa29a75c11312995c42e6d17f77480b75ca1aaec07db/ruckig-0.19.4-cp311-cp311-win_amd64.whl", hash = "sha256:e90a7dafdffc03cac4d69df26d8b5ef2f0999e78fba41c59a31e18de7b6e2377", size = 1534816, upload-time = "2026-07-15T06:59:02.185Z" },
+]
 
 [[package]]
 name = "s3transfer"

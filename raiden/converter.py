@@ -58,7 +58,9 @@ _SEQUENCE_NAME = "0000"
 _IMG_EXT = ".png"
 
 # Cameras whose images are physically mounted upside-down and need a 180° correction.
-_FLIP_CAMERAS = {"right_wrist_camera"}
+# Keep in sync with `_FLIP_CAMERAS` in raiden/server.py: episodes converted under a
+# different setting than inference uses are rotated 180° relative to the policy's input.
+_FLIP_CAMERAS: set[str] = set()
 
 # Camera role → robot_data joint key.
 _ROLE_TO_JOINT_KEY: Dict[str, str] = {
