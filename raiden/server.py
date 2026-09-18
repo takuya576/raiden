@@ -43,8 +43,10 @@ rotated 180° from what it was trained on.  No camera currently needs it.
 import asyncio
 import concurrent.futures
 import json
+import sys
 import threading
 import time
+import traceback
 from collections import deque
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -121,6 +123,15 @@ _SUBSTEP_HZ = 100.0
 # runs in a max_workers=1 executor, so if it consumed the full period the queue would
 # accumulate latency once actions arrive at exactly the service rate.
 _SMOOTH_DUTY = 0.9
+
+# RealSense stream profiles. These MUST stay in step with RealSenseCamera's
+# _COLOR_W/_COLOR_H/_DEPTH_W/_DEPTH_H in raiden/cameras/realsense.py: a device that
+# rd record can open must also be openable by rd serve, and a profile combination the
+# device does not offer fails as "Couldn't resolve requests" at pipeline.start().
+# 848x480 depth in particular is a D435/D455 profile that a D405 does not support.
+_RS_COLOR_W, _RS_COLOR_H = 640, 480
+_RS_DEPTH_W, _RS_DEPTH_H = 640, 480
+_RS_FPS = 30
 
 # Per-arm Kinematics instances, each protected by its own lock.
 #
@@ -540,8 +551,10 @@ class RaidenPolicyServer(chiral.PolicyServer):
             else:
                 h = handle.get("h", 0)
                 w = handle.get("w", 0)
-            is_zed = handle.get("type") == "zed"
-            has_depth = not (self._no_depth and is_zed)
+            # --no-depth suppresses depth for every camera type. This used to be
+            # gated on `is_zed`, so a RealSense kept advertising (and allocating)
+            # a depth buffer that --no-depth had asked for it not to produce.
+            has_depth = not self._no_depth
             configs.append(
                 chiral.CameraConfig(
                     name=name,
@@ -605,12 +618,29 @@ class RaidenPolicyServer(chiral.PolicyServer):
         self._robot.emergency_stop()
 
     async def _handle(self, websocket) -> None:
+        """Serve one client, then emergency-stop however the connection ends.
+
+        The traceback printing is load-bearing, not diagnostics-for-later.
+        ``emergency_stop()`` ends in ``os._exit(0)`` (controller.py), which kills the
+        process before asyncio can report an exception and before a WebSocket close
+        frame is sent -- so without this, a server-side bug is indistinguishable at
+        the client from a yanked cable, surfacing only as
+        ``ConnectionClosedError: no close frame received or sent``.  chiral's
+        ``_handle`` swallows ``ConnectionClosed`` itself, so anything arriving here
+        is a real fault worth printing.
+        """
         try:
             await super()._handle(websocket)
-        finally:
+        except Exception:
             print(
-                "[RaidenPolicyServer] Client disconnected — triggering emergency stop."
+                "[RaidenPolicyServer] Handler raised — the client will see this as a "
+                "dropped connection. Traceback:"
             )
+            traceback.print_exc()
+            sys.stdout.flush()
+            raise
+        finally:
+            print("[RaidenPolicyServer] Connection ended — triggering emergency stop.")
             self._estop_active.set()
             self._robot.emergency_stop()
 
@@ -1229,28 +1259,55 @@ class RaidenPolicyServer(chiral.PolicyServer):
         return handle
 
     def _open_realsense(self, serial: str) -> dict:
+        """Open one RealSense device, requesting the same profiles ``rd record`` uses.
+
+        The stream profiles must match ``RealSenseCamera`` in
+        ``raiden/cameras/realsense.py`` (``_COLOR_W/_COLOR_H``, ``_DEPTH_W/_DEPTH_H``
+        = 640x480).  They previously did not -- this asked for 1280x720 colour and
+        848x480 depth, and 848x480 depth is a D435/D455 profile that a D405 does not
+        offer, so ``pipeline.start`` raised "Couldn't resolve requests" on hardware
+        that ``rd record`` opens without complaint.  640x480 is also the resolution
+        the training datasets were recorded at, so it is what the policy expects.
+
+        Depth is skipped entirely under ``--no-depth``: no policy in this repo
+        consumes it, and it costs ~590 KB per camera per frame on the wire.
+        """
         import pyrealsense2 as rs
+
+        want_depth = not self._no_depth
 
         pipeline = rs.pipeline()
         cfg = rs.config()
         cfg.enable_device(serial)
-        cfg.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
-        cfg.enable_stream(rs.stream.depth, 848, 480, rs.format.z16, 30)
+        cfg.enable_stream(
+            rs.stream.color, _RS_COLOR_W, _RS_COLOR_H, rs.format.bgr8, _RS_FPS
+        )
+        if want_depth:
+            cfg.enable_stream(
+                rs.stream.depth, _RS_DEPTH_W, _RS_DEPTH_H, rs.format.z16, _RS_FPS
+            )
         profile = pipeline.start(cfg)
 
         color_stream = profile.get_stream(rs.stream.color).as_video_stream_profile()
         intr = color_stream.get_intrinsics()
-        depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
         K = np.array(
             [[intr.fx, 0.0, intr.ppx], [0.0, intr.fy, intr.ppy], [0.0, 0.0, 1.0]],
             dtype=np.float64,
         )
-        align = rs.align(rs.stream.color)
+        # Aligning to colour is only meaningful with a depth stream to align, and
+        # first_depth_sensor() is not guaranteed to exist once depth is disabled.
+        align = rs.align(rs.stream.color) if want_depth else None
+        depth_scale = (
+            profile.get_device().first_depth_sensor().get_depth_scale()
+            if want_depth
+            else None
+        )
         return {
             "type": "realsense",
             "pipeline": pipeline,
             "align": align,
             "depth_scale": depth_scale,
+            "has_depth": want_depth,
             "h": intr.height,
             "w": intr.width,
             "intrinsics": K,
@@ -1332,6 +1389,10 @@ class RaidenPolicyServer(chiral.PolicyServer):
         pipeline = handle["pipeline"]
         align = handle["align"]
         depth_scale = handle["depth_scale"]
+        # Under --no-depth no depth stream was ever enabled, so there is no frame to
+        # align to colour and no depth frame to wait for. Requiring one here would
+        # spin the loop forever on `continue` and publish no images at all.
+        has_depth = handle.get("has_depth", True)
         while self._running:
             try:
                 frames = pipeline.wait_for_frames(timeout_ms=500)
@@ -1340,29 +1401,34 @@ class RaidenPolicyServer(chiral.PolicyServer):
                 # for proprio interpolation.  Processing latency (resize etc.) is
                 # excluded from the timestamp.
                 frame_ts_ns = time.time_ns()
-                aligned = align.process(frames)
-                color_frame = aligned.get_color_frame()
-                depth_frame = aligned.get_depth_frame()
-                if not color_frame or not depth_frame:
+                if has_depth:
+                    frames = align.process(frames)
+                color_frame = frames.get_color_frame()
+                depth_frame = frames.get_depth_frame() if has_depth else None
+                if not color_frame or (has_depth and not depth_frame):
                     continue
                 color_bgr = np.asanyarray(color_frame.get_data())  # BGR uint8
-                depth = (np.asanyarray(depth_frame.get_data()) * depth_scale).astype(
-                    np.float32
-                )
+                depth = None
+                if has_depth:
+                    depth = (
+                        np.asanyarray(depth_frame.get_data()) * depth_scale
+                    ).astype(np.float32)
                 if flip:
                     color_bgr = cv2.rotate(color_bgr, cv2.ROTATE_180)
-                    depth = cv2.rotate(depth, cv2.ROTATE_180)
+                    if depth is not None:
+                        depth = cv2.rotate(depth, cv2.ROTATE_180)
                 if self._resize is not None:
                     h_out, w_out = self._resize
                     color_bgr = cv2.resize(
                         color_bgr, (w_out, h_out), interpolation=cv2.INTER_LANCZOS4
                     )
-                    depth = cv2.resize(
-                        depth, (w_out, h_out), interpolation=cv2.INTER_LANCZOS4
-                    )
+                    if depth is not None:
+                        depth = cv2.resize(
+                            depth, (w_out, h_out), interpolation=cv2.INTER_LANCZOS4
+                        )
                 # Serve RGB to the policy.
                 self.update_image(name, color_bgr[..., ::-1].copy())
-                if name in self.depths:
+                if depth is not None and name in self.depths:
                     self.update_depth(name, depth)
                 with self._cam_ts_locks[name]:
                     self._cam_capture_ts_ns[name] = frame_ts_ns
