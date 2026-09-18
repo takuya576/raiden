@@ -105,7 +105,22 @@ _PROPRIO_HISTORY_SIZE = 64
 # abrupt policy jumps while allowing normal motion.
 _DEFAULT_MAX_JOINT_DELTA = 0.2  # radians
 
-_CONTROL_HZ = 10.0
+# Default policy step rate. Not a loop rate: it is the assumed period of one
+# apply_action, used to size the interpolation in _smooth_command.
+_DEFAULT_CONTROL_HZ = 10.0
+
+# Target rate at which interpolated sub-commands are pushed to the arms. The number
+# of substeps is derived from this and control_hz so the push rate stays constant as
+# the policy rate changes: at 10 Hz it reproduces the historical 10 substeps exactly,
+# at 30 Hz it gives 3. Pushing much faster is wasted -- the CAN loop runs at 250 Hz
+# (dm_driver.py:31) and the MotorChainRobot thread at ~150-200 Hz
+# (motor_chain_robot.py:287-307) -- and dt would fall below time.sleep precision.
+_SUBSTEP_HZ = 100.0
+
+# Fraction of the control period the interpolation is allowed to occupy. _smooth_command
+# runs in a max_workers=1 executor, so if it consumed the full period the queue would
+# accumulate latency once actions arrive at exactly the service rate.
+_SMOOTH_DUTY = 0.9
 
 # Per-arm Kinematics instances, each protected by its own lock.
 #
@@ -235,6 +250,7 @@ class RaidenPolicyServer(chiral.PolicyServer):
         no_depth: bool = False,
         resize_images_size: Optional[Tuple[int, int]] = None,
         visualize: bool = False,
+        control_hz: float = _DEFAULT_CONTROL_HZ,
     ):
         self._no_depth = no_depth
         self._resize = resize_images_size  # (H, W) or None
@@ -243,6 +259,10 @@ class RaidenPolicyServer(chiral.PolicyServer):
                 f"action_type must be 'joint' or 'ee_pose', got {action_type!r}"
             )
         self._action_type = action_type
+        if control_hz <= 0:
+            raise ValueError(f"control_hz must be positive, got {control_hz}")
+        self._control_hz = control_hz
+        self._smooth_steps = max(2, round(_SUBSTEP_HZ / control_hz))
         self._raiden_cam_cfg = RaidenCameraConfig(camera_config_file)
         self._calibration = self._load_calibration(calibration_file)
         self._stereo_method = stereo_method
@@ -899,13 +919,18 @@ class RaidenPolicyServer(chiral.PolicyServer):
         *commanded* targets (not actual positions) to reproduce the same
         trajectory shape as the training data.
 
+        The substep count scales with ``control_hz`` (see ``_SUBSTEP_HZ``) so the
+        push rate to the arms stays ~100 Hz whatever the policy rate, and the
+        interpolation occupies only ``_SMOOTH_DUTY`` of the period so the
+        single-worker executor does not accumulate latency at saturation.
+
         Args:
             prev_cmd: Previous commanded joint positions (14,).  ``None`` on the
                 first step — falls back to reading the actual robot position.
             joint_cmd: (14,) float32 — left arm (7) then right arm (7).
         """
-        steps = 10
-        dt = (1.0 / _CONTROL_HZ) / steps
+        steps = self._smooth_steps
+        dt = (_SMOOTH_DUTY / self._control_hz) / steps
 
         # Read start positions once before the loop.
         if prev_cmd is not None:
@@ -1513,6 +1538,7 @@ def run_server(
     no_depth: bool = False,
     resize_images_size: Optional[Tuple[int, int]] = (384, 384),
     visualize: bool = False,
+    control_hz: float = _DEFAULT_CONTROL_HZ,
 ) -> None:
     """Start the Raiden chiral policy server."""
     from raiden._config import CALIBRATION_FILE, CAMERA_CONFIG
@@ -1531,6 +1557,7 @@ def run_server(
         no_depth=no_depth,
         resize_images_size=resize_images_size,
         visualize=visualize,
+        control_hz=control_hz,
     )
     try:
         server.run()

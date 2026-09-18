@@ -401,6 +401,9 @@ class ServeCommand:
     action_type: Literal["joint", "ee_pose"] = "ee_pose"
     """Action space: 'joint' (14-D joint positions, left then right) or 'ee_pose' (20-D EE poses, IK solved on-the-fly)"""
 
+    control_hz: float = 10.0
+    """Policy step rate in Hz: the assumed period of one apply_action, used to size command interpolation. Raise to 30 for a policy with a 30 Hz native action rate."""
+
     no_depth: bool = False
     """Disable depth sensing on ZED cameras (faster, no NEURAL_LIGHT inference)"""
 
@@ -798,6 +801,7 @@ def main():
                 tri_stereo_variant=command.tri_stereo_variant,
                 max_joint_delta=command.max_joint_delta,
                 action_type=command.action_type,
+                control_hz=command.control_hz,
                 no_depth=command.no_depth,
                 resize_images_size=resize,
                 visualize=command.visualize,
