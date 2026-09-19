@@ -661,9 +661,22 @@ class RaidenPolicyServer(chiral.PolicyServer):
             "action_layout": (
                 "left_xyz(3)+right_xyz(3)+left_rot6d(6)+right_rot6d(6)+left_grip(1)+right_grip(1)"
                 if self._action_type == "ee_pose"
-                else "right_joints(7)+left_joints(7)"
+                # Left first. This previously read "right_joints(7)+left_joints(7)",
+                # contradicting both the code (_smooth_command maps [:7] to
+                # follower_l) and docs/guide/serve.md. Nothing consumed the string,
+                # so it was wrong without being noticed.
+                else "left_joints(7)+right_joints(7)"
             ),
             "proprio_names": list(self.proprios.keys()),
+            # Timing and safety parameters the client cannot otherwise discover. A
+            # client that assumes 30 Hz against a server running at 10 sends actions
+            # three times faster than they are consumed, and nothing downstream
+            # notices: apply_action is fire-and-forget, so the mismatch shows up only
+            # as motion the arms cannot follow. Likewise a client gating its own
+            # trajectory on a --max-joint-delta that differs from the server's is
+            # checking against the wrong threshold.
+            "control_hz": self._control_hz,
+            "max_joint_delta": self._max_joint_delta,
         }
 
     async def reset(self) -> tuple[Observation, dict]:
