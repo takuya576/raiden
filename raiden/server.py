@@ -632,15 +632,21 @@ class RaidenPolicyServer(chiral.PolicyServer):
         try:
             await super()._handle(websocket)
         except Exception:
+            # Everything goes to stdout, not stderr: os._exit(0) in the finally skips
+            # interpreter shutdown and therefore skips buffer flushing, so the two
+            # streams must be the same one and it must be flushed by hand. Splitting
+            # the message across stdout and stderr also reorders it under
+            # `rd serve > log.txt`, which is exactly when you most want to read it.
             print(
                 "[RaidenPolicyServer] Handler raised — the client will see this as a "
                 "dropped connection. Traceback:"
             )
-            traceback.print_exc()
+            traceback.print_exc(file=sys.stdout)
             sys.stdout.flush()
             raise
         finally:
             print("[RaidenPolicyServer] Connection ended — triggering emergency stop.")
+            sys.stdout.flush()
             self._estop_active.set()
             self._robot.emergency_stop()
 
